@@ -117,6 +117,15 @@ cd /Users/thanhdang/Documents/shrimpl/crepe/backend
 PYTHONPATH=. pytest
 ```
 
+Backend test categories:
+
+```bash
+cd /Users/thanhdang/Documents/shrimpl/crepe/backend
+PYTHONPATH=. pytest -m unit
+PYTHONPATH=. pytest -m integration
+PYTHONPATH=. pytest -m regression
+```
+
 Frontend tests:
 
 ```bash
