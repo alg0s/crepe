@@ -1,0 +1,88 @@
+:root {
+  color-scheme: dark;
+  --crepe-bg: #090b0d;
+  --crepe-panel: rgba(12, 16, 18, 0.88);
+  --crepe-text: #f4efe6;
+  --crepe-muted: #b8b2a8;
+  --crepe-accent: #e0b66c;
+  --crepe-secondary: #72d6c9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at top, rgba(224, 182, 108, 0.07), transparent 28%),
+    radial-gradient(circle at bottom, rgba(114, 214, 201, 0.06), transparent 30%),
+    linear-gradient(180deg, #050709, #0a0d10 48%, #090b0d 100%);
+  color: var(--crepe-text);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.55), transparent 85%);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  font-weight: 600;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+label {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--crepe-muted);
+}
+
+select,
+input,
+textarea {
+  padding: 0.8rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 227, 184, 0.15);
+  background: rgba(255, 246, 229, 0.03);
+  color: var(--crepe-text);
+}
+
+.action-button,
+.ghost-button {
+  padding: 0.82rem 1.05rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.action-button {
+  background: linear-gradient(135deg, rgba(224, 182, 108, 0.92), rgba(208, 147, 61, 0.9));
+  color: #13110d;
+}
+
+.ghost-button {
+  background: rgba(255, 246, 229, 0.04);
+  border-color: rgba(255, 227, 184, 0.15);
+  color: var(--crepe-text);
+}

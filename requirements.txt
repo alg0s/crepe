@@ -1,0 +1,8 @@
+fastapi>=0.116,<1.0
+httpx>=0.28,<1.0
+msal>=1.31,<2.0
+pandas>=2.2,<3.0
+networkx>=3.4,<4.0
+scikit-learn>=1.6,<2.0
+pytest>=8.3,<9.0
+uvicorn>=0.35,<1.0
