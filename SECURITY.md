@@ -22,3 +22,4 @@ Report vulnerabilities privately to the repository owner through GitHub security
 - Never commit real extracted data under `data/raw`, `data/normalized`, `data/processed`, or `data/reports`.
 - Never commit tenant credentials.
 - Treat generated reports as confidential unless explicitly sanitized.
+- Privacy and compliance policy statements are documented in `PRIVACY.md` and `COMPLIANCE.md`.

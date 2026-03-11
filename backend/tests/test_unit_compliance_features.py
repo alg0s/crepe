@@ -6,6 +6,7 @@ import pytest
 from crepe.extractors.messages import MESSAGE_SELECT_FIELDS, extract_chat_messages, extract_channel_messages
 from crepe.graph_client import GraphClient
 from crepe.normalize.entities import _enrich_message_routes, _message_columns, _sentiment_from_metadata
+from crepe.privacy import PrivacyViolationError, assert_no_forbidden_columns
 from crepe.storage.files import build_run_paths
 
 
@@ -93,9 +94,36 @@ def test_message_extractors_use_select_projection():
 
 
 @pytest.mark.unit
-def test_graph_client_sanitizes_message_payload(configured_env, run_db):
+def test_graph_client_privacy_guard_blocks_content_in_strict_mode(configured_env, run_db):
     run_id = run_db.create_run(run_id="unit-sanitize")
     run_paths = build_run_paths(configured_env, run_id)
+    client = GraphClient(configured_env, "token", run_paths)
+    payload = {
+        "value": [
+            {
+                "id": "m1",
+                "subject": "secret",
+                "body": {"contentType": "html", "content": "<p>secret text</p>"},
+                "mentions": [
+                    {
+                        "mentionText": "@u2",
+                        "mentioned": {"user": {"id": "u2", "displayName": "User 2"}},
+                    }
+                ],
+                "from": {"user": {"id": "u1", "displayName": "User 1"}},
+                "reactions": [{"reactionType": "like", "user": {"id": "u2"}}],
+            }
+        ]
+    }
+    with pytest.raises(PrivacyViolationError):
+        client._sanitize_payload("chat_messages", payload)
+
+
+@pytest.mark.unit
+def test_graph_client_can_sanitize_payload_when_strict_mode_disabled(configured_env, run_db):
+    run_id = run_db.create_run(run_id="unit-sanitize-relaxed")
+    run_paths = build_run_paths(configured_env, run_id)
+    configured_env.privacy_fail_on_content = False
     client = GraphClient(configured_env, "token", run_paths)
     payload = {
         "value": [
@@ -120,3 +148,10 @@ def test_graph_client_sanitizes_message_payload(configured_env, run_db):
     assert "subject" not in item
     assert "mentionText" not in str(item["mentions"][0])
     assert item["from"]["user"]["id"] == "u1"
+
+
+@pytest.mark.unit
+def test_forbidden_column_guard_raises():
+    frame = pd.DataFrame([{"message_id": "m1", "body_text": "nope"}])
+    with pytest.raises(PrivacyViolationError):
+        assert_no_forbidden_columns(frame, "messages")

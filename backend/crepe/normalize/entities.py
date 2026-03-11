@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from crepe.privacy import assert_no_forbidden_columns, assert_payload_has_no_content
 from crepe.storage.files import RunPaths
 
 POSITIVE_REACTIONS = {"like", "heart", "laugh", "surprised"}
@@ -18,7 +19,11 @@ def read_envelopes(resource_dir: Path) -> list[dict[str, Any]]:
         return []
     envelopes: list[dict[str, Any]] = []
     for path in sorted(resource_dir.glob("*.json")):
-        envelopes.append(json.loads(path.read_text(encoding="utf-8")))
+        envelope = json.loads(path.read_text(encoding="utf-8"))
+        resource_name = str(envelope.get("meta", {}).get("resource_name", ""))
+        if resource_name in {"chat_messages", "channel_messages"}:
+            assert_payload_has_no_content(envelope.get("response", {}), f"normalize:{resource_name}:{path.name}")
+        envelopes.append(envelope)
     return envelopes
 
 
@@ -53,6 +58,8 @@ def normalize_entities(run_paths: RunPaths) -> dict[str, pd.DataFrame]:
         "channel_threads": channel_threads,
     }
     for name, frame in frames.items():
+        if name in {"messages", "conversations", "conversation_clusters", "cluster_summary"}:
+            assert_no_forbidden_columns(frame, name)
         csv_path = run_paths.normalized_dir / f"{name}.csv"
         jsonl_path = run_paths.normalized_dir / f"{name}.jsonl"
         frame.to_csv(csv_path, index=False)

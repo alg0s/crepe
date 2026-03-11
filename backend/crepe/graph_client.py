@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from crepe.config import Config
+from crepe.privacy import assert_payload_has_no_content
 from crepe.storage.files import RunPaths, sanitize_for_filename
 
 LOGGER = logging.getLogger(__name__)
@@ -112,11 +113,15 @@ class GraphClient:
     def _sanitize_payload(self, resource_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         if resource_name not in MESSAGE_RESOURCES:
             return payload
+        if self.config.privacy_fail_on_content:
+            assert_payload_has_no_content(payload, f"raw:{resource_name}")
         safe_payload = dict(payload)
         safe_values: list[dict[str, Any]] = []
         for item in payload.get("value", []):
             safe_values.append(self._sanitize_message_item(item))
         safe_payload["value"] = safe_values
+        if self.config.privacy_fail_on_content:
+            assert_payload_has_no_content(safe_payload, f"sanitized:{resource_name}")
         return safe_payload
 
     def _sanitize_message_item(self, item: dict[str, Any]) -> dict[str, Any]:

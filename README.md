@@ -15,9 +15,11 @@ The pipeline is snapshot-based. Each run gets a unique `run_id`, persists raw Gr
 - This project can process sensitive internal communication content.
 - The pipeline is configured to persist metadata only (`sender`, `receiver`, `entities`, `sentiment`).
 - Message body content is intentionally excluded from normalized/processed/reported artifacts.
+- Strict privacy mode (`CREPE_PRIVACY_FAIL_ON_CONTENT=1`) blocks processing if content-bearing keys are detected.
 - Do not commit real tenant data from `data/`.
 - Do not commit `.env` or any credential-bearing files.
 - See [SECURITY.md](./SECURITY.md) for vulnerability reporting.
+- See [PRIVACY.md](./PRIVACY.md) and [COMPLIANCE.md](./COMPLIANCE.md) for policy statements.
 
 ## Repository layout
 

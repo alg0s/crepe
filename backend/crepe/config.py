@@ -17,6 +17,7 @@ class Config:
     request_timeout_seconds: float = 30.0
     max_retries: int = 4
     log_level: str = "INFO"
+    privacy_fail_on_content: bool = True
 
     @property
     def raw_root(self) -> Path:
@@ -60,6 +61,7 @@ def load_config(base_dir: str | None = None, db_path: str | None = None) -> Conf
         request_timeout_seconds=float(os.getenv("CREPE_REQUEST_TIMEOUT_SECONDS", "30")),
         max_retries=int(os.getenv("CREPE_MAX_RETRIES", "4")),
         log_level=os.getenv("CREPE_LOG_LEVEL", "INFO"),
+        privacy_fail_on_content=os.getenv("CREPE_PRIVACY_FAIL_ON_CONTENT", "1").lower() not in {"0", "false", "no"},
     )
     config.ensure_directories()
     return config
@@ -77,4 +79,3 @@ def validate_credentials(config: Config) -> None:
     ]
     if missing:
         raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
-

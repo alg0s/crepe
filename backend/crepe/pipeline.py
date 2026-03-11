@@ -21,6 +21,7 @@ from crepe.extractors.users import extract_users
 from crepe.graph_auth import GraphAuthenticator
 from crepe.graph_client import GraphClient
 from crepe.normalize.entities import normalize_entities
+from crepe.privacy import assert_no_forbidden_columns
 from crepe.storage.db import RunDatabase
 from crepe.storage.files import RunPaths, build_run_paths
 
@@ -82,6 +83,9 @@ class PipelineRunner:
             conversations = build_conversations(messages, self.config.chat_gap_minutes)
             conversation_clusters, cluster_summary = cluster_conversations(conversations, self.config.cluster_count)
             nodes, edges, metrics = build_graph_artifacts(conversations, messages, channels, teams, conversation_clusters)
+            assert_no_forbidden_columns(conversations, "conversations")
+            assert_no_forbidden_columns(conversation_clusters, "conversation_clusters")
+            assert_no_forbidden_columns(cluster_summary, "cluster_summary")
             _write_frame(conversations, run_paths.processed_dir / "conversations.csv")
             _write_frame(conversation_clusters, run_paths.processed_dir / "conversation_clusters.csv")
             _write_frame(cluster_summary, run_paths.processed_dir / "cluster_summary.csv")

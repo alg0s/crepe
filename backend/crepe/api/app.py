@@ -13,6 +13,7 @@ from crepe.analysis.graphing import derive_team_channel_flow, filter_graph
 from crepe.config import Config, load_config
 from crepe.logging_utils import configure_logging
 from crepe.pipeline import PipelineRunner
+from crepe.privacy import strip_sensitive_columns
 from crepe.storage.db import RunDatabase
 from crepe.storage.files import build_run_paths
 
@@ -202,26 +203,7 @@ def _read_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
     frame = pd.read_csv(path)
-    return _strip_sensitive_columns(frame)
-
-
-def _strip_sensitive_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    if frame.empty:
-        return frame
-    forbidden = {
-        "body_text",
-        "body_html",
-        "body_content_type",
-        "combined_text",
-        "subject",
-        "content",
-    }
-    drop_cols = []
-    for column in frame.columns:
-        lowered = column.lower()
-        if lowered in forbidden or lowered.startswith("body_") or lowered.endswith("_content"):
-            drop_cols.append(column)
-    return frame.drop(columns=drop_cols, errors="ignore")
+    return strip_sensitive_columns(frame)
 
 
 def _conversations_for_node(conversations: pd.DataFrame, node_id: str) -> pd.DataFrame:
