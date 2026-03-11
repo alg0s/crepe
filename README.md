@@ -10,6 +10,13 @@
 
 The pipeline is snapshot-based. Each run gets a unique `run_id`, persists raw Graph payloads, and produces deterministic derived outputs that the API and UI read back later.
 
+## Security and data handling
+
+- This project can process sensitive internal communication content.
+- Do not commit real tenant data from `data/`.
+- Do not commit `.env` or any credential-bearing files.
+- See [SECURITY.md](./SECURITY.md) for vulnerability reporting.
+
 ## Repository layout
 
 ```text
@@ -114,6 +121,16 @@ Frontend tests:
 cd /Users/thanhdang/Documents/shrimpl/crepe/frontend
 npm test
 ```
+
+## CI
+
+GitHub Actions runs:
+
+- backend test suite (`pytest`)
+- frontend test suite (`vitest`)
+- frontend production build (`vite build`)
+
+Workflow path: `.github/workflows/ci.yml`
 
 ## Assumptions and limitations
 
