@@ -14,6 +14,7 @@ from crepe.storage.files import RunPaths, sanitize_for_filename
 LOGGER = logging.getLogger(__name__)
 
 TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
+MESSAGE_RESOURCES = {"chat_messages", "channel_messages"}
 
 
 class GraphClient:
@@ -52,8 +53,9 @@ class GraphClient:
         while next_url:
             response = self._request_with_retry(next_url, params=next_params)
             payload = response.json()
-            self._write_raw_page(resource_name, page_index, payload, path, context)
-            collected.extend(payload.get("value", []))
+            sanitized_payload = self._sanitize_payload(resource_name, payload)
+            self._write_raw_page(resource_name, page_index, sanitized_payload, path, context)
+            collected.extend(sanitized_payload.get("value", []))
             next_url = payload.get("@odata.nextLink")
             next_params = None
             page_index += 1
@@ -107,3 +109,56 @@ class GraphClient:
         output_path.write_text(json.dumps(envelope, indent=2), encoding="utf-8")
         return output_path
 
+    def _sanitize_payload(self, resource_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if resource_name not in MESSAGE_RESOURCES:
+            return payload
+        safe_payload = dict(payload)
+        safe_values: list[dict[str, Any]] = []
+        for item in payload.get("value", []):
+            safe_values.append(self._sanitize_message_item(item))
+        safe_payload["value"] = safe_values
+        return safe_payload
+
+    def _sanitize_message_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        safe_item: dict[str, Any] = {}
+        for key, value in item.items():
+            if key in {"body", "subject", "summary", "messageHistory", "attachments", "hostedContents"}:
+                continue
+            if key == "mentions":
+                safe_mentions = []
+                for mention in value or []:
+                    mentioned = mention.get("mentioned", {})
+                    user = mentioned.get("user", {})
+                    safe_mentions.append(
+                        {
+                            "id": mention.get("id"),
+                            "mentionType": mention.get("mentionType"),
+                            "mentioned": {
+                                "user": {
+                                    "id": user.get("id"),
+                                    "displayName": user.get("displayName"),
+                                }
+                            },
+                        }
+                    )
+                safe_item[key] = safe_mentions
+            elif key == "from":
+                sender = value or {}
+                user = (sender.get("user") or {}) if isinstance(sender, dict) else {}
+                application = (sender.get("application") or {}) if isinstance(sender, dict) else {}
+                safe_item[key] = {
+                    "user": {"id": user.get("id"), "displayName": user.get("displayName")},
+                    "application": {"id": application.get("id"), "displayName": application.get("displayName")},
+                }
+            elif key == "reactions":
+                safe_item[key] = [
+                    {
+                        "reactionType": reaction.get("reactionType"),
+                        "createdDateTime": reaction.get("createdDateTime"),
+                        "user": {"id": (reaction.get("user") or {}).get("id")},
+                    }
+                    for reaction in (value or [])
+                ]
+            else:
+                safe_item[key] = value
+        return safe_item

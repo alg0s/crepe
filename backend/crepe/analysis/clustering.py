@@ -8,20 +8,20 @@ from sklearn.cluster import KMeans
 
 
 def cluster_conversations(conversations: pd.DataFrame, n_clusters: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Cluster conversation text with TF-IDF and KMeans."""
+    """Cluster conversation metadata tokens with TF-IDF and KMeans."""
 
     if conversations.empty:
         empty = pd.DataFrame(columns=["conversation_id", "cluster_id", "cluster_label"])
         return empty, pd.DataFrame(columns=["cluster_id", "keywords", "conversation_count", "participant_count", "top_participants", "top_channels"])
     working = conversations.copy()
-    working["combined_text"] = working["combined_text"].fillna("").astype(str)
+    working["entity_tokens"] = working["entity_tokens"].fillna("").astype(str)
     if len(working) == 1:
         clustered = working[["conversation_id"]].assign(cluster_id=0, cluster_label="general")
         summary = _build_cluster_summary(clustered.merge(working, on="conversation_id"), None, None)
         return clustered, summary
     cluster_count = max(1, min(n_clusters, len(working)))
     vectorizer = TfidfVectorizer(stop_words="english", max_features=2000)
-    matrix = vectorizer.fit_transform(working["combined_text"])
+    matrix = vectorizer.fit_transform(working["entity_tokens"])
     if matrix.shape[1] == 0:
         clustered = working[["conversation_id"]].assign(cluster_id=0, cluster_label="general")
         summary = _build_cluster_summary(clustered.merge(working, on="conversation_id"), None, None)
@@ -72,4 +72,3 @@ def _cluster_keywords(vectorizer: TfidfVectorizer | None, model: KMeans | None) 
         top_indices = centroid.argsort()[::-1][:5]
         labels[cluster_id] = ", ".join(feature_names[index] for index in top_indices if centroid[index] > 0)
     return labels
-

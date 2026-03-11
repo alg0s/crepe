@@ -95,6 +95,12 @@ def _build_edges(
         sender_id = record.get("sender_id")
         if not sender_id:
             continue
+        for receiver_id in _split_ids(record.get("receiver_ids")):
+            if receiver_id == sender_id:
+                continue
+            key = (f"user:{sender_id}", f"user:{receiver_id}", "user_user_flow")
+            counters[key]["weight"] += 1
+            counters[key]["conversation_count"] += 1
         channel_id = record.get("channel_id")
         if channel_id:
             key = (f"user:{sender_id}", f"channel:{channel_id}", "user_channel_activity")
@@ -109,7 +115,7 @@ def _build_edges(
                 counters[key]["conversation_count"] += 1
 
     for record in conversations.to_dict(orient="records"):
-        participants = [value for value in (record.get("participants") or "").split("|") if value]
+        participants = _split_ids(record.get("participants"))
         for first, second in combinations(sorted(set(participants)), 2):
             key = (f"user:{first}", f"user:{second}", "user_user_coparticipation")
             counters[key]["weight"] += 1
@@ -179,7 +185,7 @@ def filter_graph(
     edge_threshold: float = 0.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     mode_map = {
-        "user_network": {"user_user_reply", "user_user_coparticipation"},
+        "user_network": {"user_user_reply", "user_user_coparticipation", "user_user_flow"},
         "channel_overlap": {"channel_channel_overlap"},
         "theme_network": {"cluster_channel_affinity"},
         "activity_network": {"user_channel_activity"},
@@ -215,3 +221,11 @@ def derive_team_channel_flow(channels: pd.DataFrame, messages: pd.DataFrame) -> 
             )
     return pd.DataFrame(node_rows).drop_duplicates(), pd.DataFrame(rows)
 
+
+def _split_ids(value: object) -> list[str]:
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return []
+    return [item for item in text.split("|") if item and item.lower() != "nan"]

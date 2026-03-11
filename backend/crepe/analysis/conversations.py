@@ -23,7 +23,10 @@ def build_conversations(messages: pd.DataFrame, chat_gap_minutes: int) -> pd.Dat
                 "participant_count",
                 "participants",
                 "message_ids",
-                "combined_text",
+                "entity_tokens",
+                "dominant_entities",
+                "avg_sentiment_score",
+                "sentiment_balance",
             ]
         )
     if (messages["source_type"] == "channel").any():
@@ -63,7 +66,23 @@ def _build_chat_conversations(chat_messages: pd.DataFrame, chat_gap_minutes: int
 
 def _conversation_row(frame: pd.DataFrame, conversation_id: str, source_type: str) -> dict[str, object]:
     ordered = frame.sort_values("created_at")
-    participants = sorted({value for value in ordered["sender_id"].dropna().astype(str).tolist() if value})
+    sender_ids = set(ordered["sender_id"].dropna().astype(str).tolist())
+    receiver_ids = {
+        value
+        for field in ordered["receiver_ids"].fillna("").astype(str).tolist()
+        for value in field.split("|")
+        if value
+    }
+    participants = sorted(sender_ids | receiver_ids)
+    entity_counter: dict[str, int] = {}
+    for field in ordered["entity_ids"].fillna("").astype(str).tolist():
+        for token in filter(None, field.split("|")):
+            entity_counter[token] = entity_counter.get(token, 0) + 1
+    dominant_entities = "|".join(
+        token for token, _ in sorted(entity_counter.items(), key=lambda item: item[1], reverse=True)[:8]
+    )
+    avg_sentiment = float(pd.to_numeric(ordered["sentiment_score"], errors="coerce").fillna(0.0).mean())
+    sentiment_counts = ordered["sentiment_label"].fillna("neutral").astype(str).value_counts().to_dict()
     return {
         "conversation_id": conversation_id,
         "source_type": source_type,
@@ -76,6 +95,17 @@ def _conversation_row(frame: pd.DataFrame, conversation_id: str, source_type: st
         "participant_count": len(participants),
         "participants": "|".join(participants),
         "message_ids": "|".join(ordered["message_id"].astype(str).tolist()),
-        "combined_text": " ".join(filter(None, ordered["body_text"].astype(str).tolist())).strip(),
+        "entity_tokens": " ".join(
+            token.replace(":", "_")
+            for token in sorted(
+                {token for token_field in ordered["entity_ids"].fillna("").astype(str).tolist() for token in token_field.split("|") if token}
+            )
+        ),
+        "dominant_entities": dominant_entities,
+        "avg_sentiment_score": round(avg_sentiment, 4),
+        "sentiment_balance": (
+            f"positive:{sentiment_counts.get('positive', 0)}|"
+            f"neutral:{sentiment_counts.get('neutral', 0)}|"
+            f"negative:{sentiment_counts.get('negative', 0)}"
+        ),
     }
-

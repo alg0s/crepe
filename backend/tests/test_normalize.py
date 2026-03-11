@@ -8,6 +8,8 @@ def test_normalize_entities_creates_flat_outputs(sample_run):
     frames = normalize_entities(run_paths)
     assert "messages" in frames
     assert len(frames["messages"]) == 9
-    assert "Need feed pricing update" in frames["messages"]["body_text"].tolist()
+    assert "entity_ids" in frames["messages"].columns
+    assert "sentiment_score" in frames["messages"].columns
+    assert "receiver_ids" in frames["messages"].columns
+    assert "body_text" not in frames["messages"].columns
     assert (run_paths.normalized_dir / "messages.csv").exists()
-

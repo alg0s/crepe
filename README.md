@@ -13,6 +13,8 @@ The pipeline is snapshot-based. Each run gets a unique `run_id`, persists raw Gr
 ## Security and data handling
 
 - This project can process sensitive internal communication content.
+- The pipeline is configured to persist metadata only (`sender`, `receiver`, `entities`, `sentiment`).
+- Message body content is intentionally excluded from normalized/processed/reported artifacts.
 - Do not commit real tenant data from `data/`.
 - Do not commit `.env` or any credential-bearing files.
 - See [SECURITY.md](./SECURITY.md) for vulnerability reporting.
@@ -135,7 +137,8 @@ Workflow path: `.github/workflows/ci.yml`
 ## Assumptions and limitations
 
 - Authentication is app-only via `MS_TENANT_ID`, `MS_CLIENT_ID`, and `MS_CLIENT_SECRET`.
-- The tool is internal-only and stores full message content in local artifacts and the admin UI.
+- The tool is internal-only and stores communication metadata only (no message body persistence).
 - The recommendation engine is heuristic. It proposes merges, splits, and new channels, but it does not mutate Teams.
 - Channel message extraction uses thread roots and replies; chat segmentation is based on inactivity gaps.
+- Sentiment scoring is metadata-driven (importance and reaction signals), not text NLP.
 - Some Microsoft Graph endpoints remain permission-sensitive even with tenant admin consent. The extractor surfaces those failures explicitly.

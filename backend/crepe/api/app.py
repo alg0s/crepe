@@ -201,7 +201,27 @@ def _run_payload(run, database: RunDatabase) -> dict[str, Any]:
 def _read_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
-    return pd.read_csv(path)
+    frame = pd.read_csv(path)
+    return _strip_sensitive_columns(frame)
+
+
+def _strip_sensitive_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    forbidden = {
+        "body_text",
+        "body_html",
+        "body_content_type",
+        "combined_text",
+        "subject",
+        "content",
+    }
+    drop_cols = []
+    for column in frame.columns:
+        lowered = column.lower()
+        if lowered in forbidden or lowered.startswith("body_") or lowered.endswith("_content"):
+            drop_cols.append(column)
+    return frame.drop(columns=drop_cols, errors="ignore")
 
 
 def _conversations_for_node(conversations: pd.DataFrame, node_id: str) -> pd.DataFrame:

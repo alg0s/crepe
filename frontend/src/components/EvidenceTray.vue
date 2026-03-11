@@ -17,7 +17,8 @@ defineProps<{
         <ul>
           <li v-for="conversation in conversations.slice(0, 6)" :key="String(conversation.conversation_id)">
             <strong>{{ conversation.conversation_id }}</strong>
-            <span>{{ conversation.combined_text }}</span>
+            <span>Entities: {{ conversation.dominant_entities || "none" }}</span>
+            <span>Sentiment: {{ Number(conversation.avg_sentiment_score ?? 0).toFixed(2) }}</span>
           </li>
         </ul>
       </article>
@@ -26,7 +27,9 @@ defineProps<{
         <ul>
           <li v-for="message in messages.slice(0, 6)" :key="String(message.message_id)">
             <strong>{{ message.sender_name }}</strong>
-            <span>{{ message.body_text }}</span>
+            <span>Receivers: {{ message.receiver_ids || "none" }}</span>
+            <span>Entities: {{ message.entity_ids || "none" }}</span>
+            <span>Sentiment: {{ Number(message.sentiment_score ?? 0).toFixed(2) }} ({{ message.sentiment_label || "neutral" }})</span>
           </li>
         </ul>
       </article>

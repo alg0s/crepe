@@ -35,7 +35,8 @@ defineProps<{
         <ul>
           <li v-for="conversation in (nodeDetail.conversations as any[]).slice(0, 8)" :key="conversation.conversation_id">
             <strong>{{ conversation.conversation_id }}</strong>
-            <span>{{ conversation.combined_text }}</span>
+            <span>Entities: {{ conversation.dominant_entities || "none" }}</span>
+            <span>Avg sentiment: {{ Number(conversation.avg_sentiment_score ?? 0).toFixed(2) }}</span>
           </li>
         </ul>
       </section>
@@ -60,7 +61,8 @@ defineProps<{
         <ul>
           <li v-for="conversation in (edgeDetail.conversations as any[]).slice(0, 8)" :key="conversation.conversation_id">
             <strong>{{ conversation.conversation_id }}</strong>
-            <span>{{ conversation.combined_text }}</span>
+            <span>Entities: {{ conversation.dominant_entities || "none" }}</span>
+            <span>Sentiment mix: {{ conversation.sentiment_balance || "n/a" }}</span>
           </li>
         </ul>
       </section>
