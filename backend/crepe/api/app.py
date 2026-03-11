@@ -11,9 +11,11 @@ from pydantic import BaseModel, Field
 
 from crepe.analysis.graphing import derive_team_channel_flow, filter_graph
 from crepe.config import Config, load_config
+from crepe.graph_auth import GraphAuthenticator
 from crepe.logging_utils import configure_logging
 from crepe.pipeline import PipelineRunner
 from crepe.privacy import strip_sensitive_columns
+from crepe.settings import REQUIRED_CREDENTIAL_KEYS, SettingsManager
 from crepe.storage.db import RunDatabase
 from crepe.storage.files import build_run_paths
 
@@ -25,11 +27,17 @@ class RunCreateRequest(BaseModel):
     background: bool = True
 
 
+class SettingsUpdateRequest(BaseModel):
+    tenant_id: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+
+
 def create_app(config: Config | None = None) -> FastAPI:
     resolved_config = config or load_config()
     configure_logging(resolved_config.log_level)
     database = RunDatabase(resolved_config.db_path)
-    runner = PipelineRunner(resolved_config, database)
+    settings_manager = SettingsManager()
 
     app = FastAPI(title="crepe API", version="0.1.0")
     app.add_middleware(
@@ -40,12 +48,115 @@ def create_app(config: Config | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    def _load_runtime_config() -> Config:
+        return load_config(str(resolved_config.base_dir), str(resolved_config.db_path))
+
+    def _build_runner() -> PipelineRunner:
+        runtime_config = _load_runtime_config()
+        configure_logging(runtime_config.log_level)
+        return PipelineRunner(runtime_config, database)
+
+    @app.get("/api/system/status")
+    def get_system_status() -> dict[str, Any]:
+        runtime = _load_runtime_config()
+        settings_payload = _build_settings_payload(settings_manager)
+        missing = _missing_graph_credentials(runtime)
+        return {
+            "graph_auth_configured": len(missing) == 0,
+            "missing_credentials": missing,
+            "credential_source": settings_payload["credential_source"],
+            "external_env_path": settings_payload["external_env_path"],
+            "active_env_path": settings_payload["active_env_path"],
+        }
+
+    @app.get("/api/settings")
+    def get_settings() -> dict[str, Any]:
+        runtime = _load_runtime_config()
+        missing = _missing_graph_credentials(runtime)
+        settings_payload = _build_settings_payload(settings_manager)
+        return {
+            **settings_payload,
+            "graph_auth_configured": len(missing) == 0,
+            "missing_credentials": missing,
+        }
+
+    @app.put("/api/settings")
+    def update_settings(request: SettingsUpdateRequest) -> dict[str, Any]:
+        try:
+            settings_manager.upsert(
+                credential_source="managed",
+                external_env_path=None,
+                credential_updates={
+                    "MS_TENANT_ID": request.tenant_id,
+                    "MS_CLIENT_ID": request.client_id,
+                    "MS_CLIENT_SECRET": request.client_secret,
+                },
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        runtime = _load_runtime_config()
+        missing = _missing_graph_credentials(runtime)
+        settings_payload = _build_settings_payload(settings_manager)
+        return {
+            **settings_payload,
+            "graph_auth_configured": len(missing) == 0,
+            "missing_credentials": missing,
+        }
+
+    @app.post("/api/settings/test-graph")
+    def test_graph_settings() -> dict[str, Any]:
+        runtime = _load_runtime_config()
+        missing = _missing_graph_credentials(runtime)
+        if missing:
+            return {
+                "ok": False,
+                "error": f"Missing required credentials: {', '.join(missing)}",
+            }
+        try:
+            auth = GraphAuthenticator(runtime)
+            auth.get_access_token()
+        except Exception as exc:  # pragma: no cover - external service failure variations
+            return {
+                "ok": False,
+            "error": str(exc),
+            }
+        return {"ok": True, "error": ""}
+
+    @app.get("/api/jobs/active")
+    def get_active_job() -> dict[str, Any]:
+        active = database.latest_run_by_status(("running", "paused"))
+        return {
+            "is_running": active is not None and active.status == "running",
+            "active_run": _run_payload(active, database) if active else None,
+        }
+
+    @app.post("/api/jobs/pause")
+    def pause_active_job() -> dict[str, Any]:
+        active = database.latest_run_by_status(("running",))
+        if active is None:
+            raise HTTPException(status_code=409, detail="No running job to pause")
+        database.update_run(active.run_id, status="paused", stage=active.stage, error_message="Paused by operator via API")
+        return {"ok": True, "run_id": active.run_id, "status": "paused", "stage": active.stage}
+
+    @app.post("/api/jobs/cancel")
+    def cancel_active_job() -> dict[str, Any]:
+        active = database.latest_run_by_status(("running", "paused"))
+        if active is None:
+            raise HTTPException(status_code=409, detail="No active job to cancel")
+        database.update_run(active.run_id, status="cancelled", stage=active.stage, error_message="Cancelled by operator via API")
+        return {"ok": True, "run_id": active.run_id, "status": "cancelled", "stage": active.stage}
+
     @app.get("/api/runs")
     def list_runs() -> list[dict[str, Any]]:
         return [_run_payload(run, database) for run in database.list_runs()]
 
     @app.post("/api/runs")
     def create_run(request: RunCreateRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+        active = database.latest_run_by_status(("running", "paused"))
+        if active is not None:
+            raise HTTPException(status_code=409, detail=f"Another job is active ({active.run_id}, status={active.status})")
+        runner = _build_runner()
         run_id, _ = runner.ensure_run(request.run_id, request.scope)
         action = _pipeline_callable(runner, request.pipeline, run_id, request.scope)
         if request.background:
@@ -178,6 +289,21 @@ def _pipeline_callable(runner: PipelineRunner, pipeline: str, run_id: str, scope
     return lambda: runner.run_all(run_id, scope)
 
 
+def _build_settings_payload(settings_manager: SettingsManager) -> dict[str, Any]:
+    state = settings_manager.load_state()
+    effective, _, active_env_path = settings_manager.resolve_credentials(state)
+    managed_presence = settings_manager.managed_credential_presence()
+    effective_presence = {key: bool(effective.get(key)) for key in REQUIRED_CREDENTIAL_KEYS}
+    return {
+        "credential_source": state.credential_source,
+        "external_env_path": state.external_env_path,
+        "managed_env_path": str(settings_manager.managed_env_path),
+        "active_env_path": str(active_env_path),
+        "managed_credentials": managed_presence,
+        "effective_credentials": effective_presence,
+    }
+
+
 def _require_run(database: RunDatabase, run_id: str):
     run = database.get_run(run_id)
     if run is None:
@@ -255,3 +381,14 @@ def _conversations_for_edge(conversations: pd.DataFrame, source: str, target: st
         channel_id = target.split(":", 1)[1]
         return conversations[conversations["channel_id"].astype(str) == channel_id]
     return conversations.head(25)
+
+
+def _missing_graph_credentials(config: Config) -> list[str]:
+    missing: list[str] = []
+    if not config.tenant_id:
+        missing.append("MS_TENANT_ID")
+    if not config.client_id:
+        missing.append("MS_CLIENT_ID")
+    if not config.client_secret:
+        missing.append("MS_CLIENT_SECRET")
+    return missing

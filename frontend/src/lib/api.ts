@@ -1,11 +1,16 @@
 import type {
+  ActiveJobPayload,
   ClusterPayload,
   EdgeDetailPayload,
   GraphPayload,
   NodeDetailPayload,
   RecommendationsPayload,
   RunRecord,
-  SummaryPayload
+  SettingsPayload,
+  SettingsTestResult,
+  SettingsUpdateRequest,
+  SummaryPayload,
+  SystemStatusPayload
 } from "../types/api";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
@@ -17,11 +22,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
     ...init
   });
+  const raw = await response.text();
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed: ${response.status}`);
+    let detailMessage = "";
+    if (raw) {
+      try {
+        const payload = JSON.parse(raw) as { detail?: unknown };
+        if (typeof payload.detail === "string" && payload.detail) {
+          detailMessage = payload.detail;
+        }
+      } catch {
+        // Fall back to raw body as-is.
+      }
+    }
+    throw new Error(detailMessage || raw || `Request failed: ${response.status}`);
   }
-  return (await response.json()) as T;
+  if (!raw) {
+    return {} as T;
+  }
+  return JSON.parse(raw) as T;
 }
 
 export function listRuns() {
@@ -32,6 +51,43 @@ export function createRun(payload: { run_id?: string; pipeline?: string; backgro
   return request<RunRecord>("/api/runs", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export function getSystemStatus() {
+  return request<SystemStatusPayload>("/api/system/status");
+}
+
+export function getSettings() {
+  return request<SettingsPayload>("/api/settings");
+}
+
+export function updateSettings(payload: SettingsUpdateRequest) {
+  return request<SettingsPayload>("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function testGraphSettings() {
+  return request<SettingsTestResult>("/api/settings/test-graph", {
+    method: "POST"
+  });
+}
+
+export function getActiveJob() {
+  return request<ActiveJobPayload>("/api/jobs/active");
+}
+
+export function pauseActiveJob() {
+  return request<{ ok: boolean; run_id: string; status: string; stage: string }>("/api/jobs/pause", {
+    method: "POST"
+  });
+}
+
+export function cancelActiveJob() {
+  return request<{ ok: boolean; run_id: string; status: string; stage: string }>("/api/jobs/cancel", {
+    method: "POST"
   });
 }
 

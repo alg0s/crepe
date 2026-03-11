@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from crepe.settings import SettingsManager
+
 
 @dataclass(slots=True)
 class Config:
@@ -18,6 +20,10 @@ class Config:
     max_retries: int = 4
     log_level: str = "INFO"
     privacy_fail_on_content: bool = True
+    credential_source: str = "managed"
+    external_env_path: str | None = None
+    managed_env_path: Path | None = None
+    active_env_path: Path | None = None
 
     @property
     def raw_root(self) -> Path:
@@ -50,10 +56,12 @@ class Config:
 def load_config(base_dir: str | None = None, db_path: str | None = None) -> Config:
     base = Path(base_dir or os.getenv("CREPE_BASE_DIR", "../data")).expanduser().resolve()
     database_path = Path(db_path or os.getenv("CREPE_DB_PATH", base / "crepe.sqlite3")).expanduser().resolve()
+    settings_manager = SettingsManager()
+    credentials, state, source_path = settings_manager.resolve_credentials()
     config = Config(
-        tenant_id=os.getenv("MS_TENANT_ID", ""),
-        client_id=os.getenv("MS_CLIENT_ID", ""),
-        client_secret=os.getenv("MS_CLIENT_SECRET", ""),
+        tenant_id=credentials.get("MS_TENANT_ID", ""),
+        client_id=credentials.get("MS_CLIENT_ID", ""),
+        client_secret=credentials.get("MS_CLIENT_SECRET", ""),
         base_dir=base,
         db_path=database_path,
         cluster_count=int(os.getenv("CREPE_CLUSTER_COUNT", "6")),
@@ -62,6 +70,10 @@ def load_config(base_dir: str | None = None, db_path: str | None = None) -> Conf
         max_retries=int(os.getenv("CREPE_MAX_RETRIES", "4")),
         log_level=os.getenv("CREPE_LOG_LEVEL", "INFO"),
         privacy_fail_on_content=os.getenv("CREPE_PRIVACY_FAIL_ON_CONTENT", "1").lower() not in {"0", "false", "no"},
+        credential_source=state.credential_source,
+        external_env_path=state.external_env_path,
+        managed_env_path=settings_manager.managed_env_path,
+        active_env_path=source_path,
     )
     config.ensure_directories()
     return config
@@ -78,4 +90,4 @@ def validate_credentials(config: Config) -> None:
         if not value
     ]
     if missing:
-        raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+        raise ValueError(f"Missing required credentials: {', '.join(missing)}")

@@ -133,6 +133,19 @@ class RunDatabase:
             rows = connection.execute("SELECT * FROM runs ORDER BY created_at DESC").fetchall()
         return [RunRecord(**dict(row)) for row in rows]
 
+    def list_runs_by_status(self, statuses: tuple[str, ...], limit: int = 20) -> list[RunRecord]:
+        if not statuses:
+            return []
+        placeholders = ",".join("?" for _ in statuses)
+        query = f"SELECT * FROM runs WHERE status IN ({placeholders}) ORDER BY created_at DESC LIMIT ?"
+        with self.connect() as connection:
+            rows = connection.execute(query, (*statuses, limit)).fetchall()
+        return [RunRecord(**dict(row)) for row in rows]
+
+    def latest_run_by_status(self, statuses: tuple[str, ...]) -> RunRecord | None:
+        results = self.list_runs_by_status(statuses, limit=1)
+        return results[0] if results else None
+
     def get_run(self, run_id: str) -> RunRecord | None:
         with self.connect() as connection:
             row = connection.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
@@ -145,4 +158,3 @@ class RunDatabase:
                 (run_id,),
             ).fetchall()
         return [dict(row) for row in rows]
-

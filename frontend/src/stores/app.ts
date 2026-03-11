@@ -1,22 +1,34 @@
 import { reactive, readonly } from "vue";
 import {
+  cancelActiveJob,
   createRun,
+  getActiveJob,
   getClusters,
   getEdgeDetail,
   getGraph,
   getNodeDetail,
   getRecommendations,
+  getSettings,
   getSummary,
+  getSystemStatus,
+  pauseActiveJob,
+  testGraphSettings,
+  updateSettings,
   listRuns
 } from "../lib/api";
 import type {
+  ActiveJobPayload,
   ClusterPayload,
   EdgeDetailPayload,
   GraphPayload,
   NodeDetailPayload,
   RecommendationsPayload,
   RunRecord,
-  SummaryPayload
+  SettingsPayload,
+  SettingsTestResult,
+  SettingsUpdateRequest,
+  SummaryPayload,
+  SystemStatusPayload
 } from "../types/api";
 
 type GraphMode = "user_network" | "channel_overlap" | "theme_network" | "activity_network" | "team_channel_flow";
@@ -30,6 +42,10 @@ const state = reactive({
   summary: null as SummaryPayload | null,
   clusters: null as ClusterPayload | null,
   recommendations: null as RecommendationsPayload | null,
+  systemStatus: null as SystemStatusPayload | null,
+  settings: null as SettingsPayload | null,
+  settingsTest: null as SettingsTestResult | null,
+  activeJob: null as ActiveJobPayload | null,
   nodeDetail: null as NodeDetailPayload | null,
   edgeDetail: null as EdgeDetailPayload | null,
   loading: false,
@@ -46,11 +62,59 @@ export function useAppStore() {
     });
   }
 
-  async function launchRun() {
+  async function launchRun(pipeline: "all" | "demo" = "all") {
     await runTask(async () => {
-      const run = await createRun({ pipeline: "all", background: true, scope: {} });
+      const run = await createRun({ pipeline, background: true, scope: {} });
       state.currentRunId = run.run_id;
       await refreshRuns();
+    });
+  }
+
+  async function loadSystemStatus() {
+    await runTask(async () => {
+      state.systemStatus = await getSystemStatus();
+    });
+  }
+
+  async function loadSettings() {
+    await runTask(async () => {
+      state.settings = await getSettings();
+    });
+  }
+
+  async function saveSettings(payload: SettingsUpdateRequest) {
+    await runTask(async () => {
+      state.settings = await updateSettings(payload);
+      state.systemStatus = await getSystemStatus();
+    });
+  }
+
+  async function runSettingsTest() {
+    await runTask(async () => {
+      state.settingsTest = await testGraphSettings();
+      state.systemStatus = await getSystemStatus();
+    });
+  }
+
+  async function loadActiveJob() {
+    await runTask(async () => {
+      state.activeJob = await getActiveJob();
+    });
+  }
+
+  async function pauseJob() {
+    await runTask(async () => {
+      await pauseActiveJob();
+      state.activeJob = await getActiveJob();
+      state.runs = await listRuns();
+    });
+  }
+
+  async function cancelJob() {
+    await runTask(async () => {
+      await cancelActiveJob();
+      state.activeJob = await getActiveJob();
+      state.runs = await listRuns();
     });
   }
 
@@ -119,6 +183,13 @@ export function useAppStore() {
     state: readonly(state),
     refreshRuns,
     launchRun,
+    loadSystemStatus,
+    loadSettings,
+    saveSettings,
+    runSettingsTest,
+    loadActiveJob,
+    pauseJob,
+    cancelJob,
     loadSummary,
     loadGraph,
     loadClusters,

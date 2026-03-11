@@ -50,6 +50,53 @@ export MS_CLIENT_ID="..."
 export MS_CLIENT_SECRET="..."
 ```
 
+Or put the same values in `/Users/thanhdang/Documents/shrimpl/crepe/.env` and use the launcher below.
+
+## Install (recommended)
+
+macOS/Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alg0s/crepe/main/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+iwr https://raw.githubusercontent.com/alg0s/crepe/main/install.ps1 -UseBasicParsing | iex
+```
+
+## Quick start (recommended)
+
+Use one entrypoint and choose CLI or web:
+
+```bash
+crepe web                   # start API + frontend
+crepe status                # show service + job status
+crepe run all               # real Teams run
+crepe run demo              # demo run without Graph
+crepe pause                 # pause current running job
+crepe cancel                # cancel current active job
+crepe resume                # resume latest paused job
+crepe stop                  # stop web services
+```
+
+Only one active job (running/paused) is allowed at a time.
+
+Open the UI at `http://127.0.0.1:5173`, go to `Setup`, enter credentials, then run from `Runs`.
+Credentials entered in Setup are saved automatically to the managed secure local file (`~/.config/crepe/.env` on macOS/Linux, `%APPDATA%/crepe/.env` on Windows).
+By default, launcher runtime data is stored at `~/.config/crepe/data` (or `%APPDATA%/crepe/data` on Windows), not the repository `data/` folder.
+Runtime SQLite job log file:
+- macOS/Linux: `~/.config/crepe/data/crepe.sqlite3`
+- Windows: `%APPDATA%/crepe/data/crepe.sqlite3`
+
+If you are running directly from this repository without installer-managed PATH:
+
+```bash
+./run-crepe.sh web
+./run-crepe.sh run demo
+```
+
 ## Exact run commands
 
 Run the full pipeline:

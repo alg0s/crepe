@@ -2,6 +2,7 @@
 import { useAppStore } from "./stores/app";
 
 const navItems = [
+  { label: "Setup", href: "/setup" },
   { label: "Overview", href: "/overview" },
   { label: "Runs", href: "/runs" },
   { label: "Explorer", href: "/explorer" },

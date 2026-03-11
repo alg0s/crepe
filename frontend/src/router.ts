@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import SetupView from "./views/SetupView.vue";
 import OverviewView from "./views/OverviewView.vue";
 import RunsView from "./views/RunsView.vue";
 import ExplorerView from "./views/ExplorerView.vue";
@@ -9,6 +10,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/", redirect: "/overview" },
+    { path: "/setup", component: SetupView },
     { path: "/overview", component: OverviewView },
     { path: "/runs", component: RunsView },
     { path: "/explorer", component: ExplorerView },

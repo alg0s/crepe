@@ -42,7 +42,8 @@ class PipelineRunner:
     def run_extract(self, run_id: str | None = None, scope: dict[str, Any] | None = None) -> str:
         validate_credentials(self.config)
         run_id, run_paths = self.ensure_run(run_id, scope)
-        self.database.update_run(run_id, status="running", stage="extract")
+        if not self._begin_stage(run_id, "extract"):
+            return run_id
         auth = GraphAuthenticator(self.config)
         token = auth.get_access_token()
         try:
@@ -57,12 +58,13 @@ class PipelineRunner:
             self.database.update_run(run_id, status="failed", stage="extract", error_message=str(exc))
             raise
         self._register_tree("extract", run_paths.raw_dir, run_id)
-        self.database.update_run(run_id, status="completed", stage="extract")
+        self._finish_stage(run_id, "extract")
         return run_id
 
     def run_normalize(self, run_id: str) -> str:
         run_paths = build_run_paths(self.config, run_id)
-        self.database.update_run(run_id, status="running", stage="normalize")
+        if not self._begin_stage(run_id, "normalize"):
+            return run_id
         try:
             frames = normalize_entities(run_paths)
             summary = {"normalized_tables": {name: int(len(frame)) for name, frame in frames.items()}}
@@ -70,12 +72,13 @@ class PipelineRunner:
             self.database.update_run(run_id, status="failed", stage="normalize", error_message=str(exc))
             raise
         self._register_tree("normalize", run_paths.normalized_dir, run_id)
-        self.database.update_run(run_id, status="completed", stage="normalize", summary=summary)
+        self._finish_stage(run_id, "normalize", summary=summary)
         return run_id
 
     def run_analyze(self, run_id: str) -> str:
         run_paths = build_run_paths(self.config, run_id)
-        self.database.update_run(run_id, status="running", stage="analyze")
+        if not self._begin_stage(run_id, "analyze"):
+            return run_id
         try:
             channels = _load_csv(run_paths.normalized_dir / "channels.csv")
             teams = _load_csv(run_paths.normalized_dir / "teams.csv")
@@ -102,12 +105,13 @@ class PipelineRunner:
             self.database.update_run(run_id, status="failed", stage="analyze", error_message=str(exc))
             raise
         self._register_tree("analyze", run_paths.processed_dir, run_id)
-        self.database.update_run(run_id, status="completed", stage="analyze", summary=summary)
+        self._finish_stage(run_id, "analyze", summary=summary)
         return run_id
 
     def run_suggest(self, run_id: str) -> str:
         run_paths = build_run_paths(self.config, run_id)
-        self.database.update_run(run_id, status="running", stage="suggest")
+        if not self._begin_stage(run_id, "suggest"):
+            return run_id
         try:
             channels = _load_csv(run_paths.normalized_dir / "channels.csv")
             conversations = _load_csv(run_paths.processed_dir / "conversations.csv")
@@ -126,38 +130,51 @@ class PipelineRunner:
             raise
         self._register_tree("suggest", run_paths.reports_dir, run_id)
         self.database.add_artifact(run_id, "suggest", "proposed_channels.csv", run_paths.processed_dir / "proposed_channels.csv")
-        self.database.update_run(
+        self._finish_stage(
             run_id,
-            status="completed",
-            stage="suggest",
+            "suggest",
             summary={**summary, "recommendation_count": int(len(recommendations))},
         )
         return run_id
 
     def run_all(self, run_id: str | None = None, scope: dict[str, Any] | None = None) -> str:
         resolved_run_id = self.run_extract(run_id, scope)
+        if self._is_halted(resolved_run_id):
+            return resolved_run_id
         self.run_normalize(resolved_run_id)
+        if self._is_halted(resolved_run_id):
+            return resolved_run_id
         self.run_analyze(resolved_run_id)
+        if self._is_halted(resolved_run_id):
+            return resolved_run_id
         self.run_suggest(resolved_run_id)
-        self.database.update_run(resolved_run_id, status="completed", stage="all")
+        if self._is_halted(resolved_run_id):
+            return resolved_run_id
+        self.database.update_run(resolved_run_id, status="completed", stage="all", error_message=None)
         return resolved_run_id
 
     def run_demo(self, run_id: str | None = None, scope: dict[str, Any] | None = None) -> str:
         resolved_run_id, run_paths = self.ensure_run(run_id, scope or {"source": "demo"})
-        self.database.update_run(resolved_run_id, status="running", stage="demo")
+        if not self._begin_stage(resolved_run_id, "demo"):
+            return resolved_run_id
         try:
             write_demo_raw_data(run_paths)
             self._register_tree("demo", run_paths.raw_dir, resolved_run_id)
             self.run_normalize(resolved_run_id)
+            if self._is_halted(resolved_run_id):
+                return resolved_run_id
             self.run_analyze(resolved_run_id)
+            if self._is_halted(resolved_run_id):
+                return resolved_run_id
             self.run_suggest(resolved_run_id)
+            if self._is_halted(resolved_run_id):
+                return resolved_run_id
         except Exception as exc:
             self.database.update_run(resolved_run_id, status="failed", stage="demo", error_message=str(exc))
             raise
-        self.database.update_run(
+        self._finish_stage(
             resolved_run_id,
-            status="completed",
-            stage="demo",
+            "demo",
             summary={**(self.database.get_run(resolved_run_id).summary()), "demo": True},
         )
         return resolved_run_id
@@ -166,6 +183,36 @@ class PipelineRunner:
         for path in sorted(root.rglob("*")):
             if path.is_file():
                 self.database.add_artifact(run_id, stage, path.name, path)
+
+    def _begin_stage(self, run_id: str, stage: str) -> bool:
+        if self._is_halted(run_id):
+            return False
+        self.database.update_run(run_id, status="running", stage=stage, error_message=None)
+        return True
+
+    def _finish_stage(self, run_id: str, stage: str, summary: dict[str, Any] | None = None) -> bool:
+        if self._is_cancelled(run_id):
+            self.database.update_run(run_id, status="cancelled", stage=stage, error_message="Cancelled by operator via CLI")
+            return False
+        if self._is_paused(run_id):
+            self.database.update_run(run_id, status="paused", stage=stage, error_message="Paused by operator via CLI")
+            return False
+        if summary is None:
+            self.database.update_run(run_id, status="completed", stage=stage, error_message=None)
+        else:
+            self.database.update_run(run_id, status="completed", stage=stage, summary=summary, error_message=None)
+        return True
+
+    def _is_halted(self, run_id: str) -> bool:
+        return self._is_paused(run_id) or self._is_cancelled(run_id)
+
+    def _is_paused(self, run_id: str) -> bool:
+        run = self.database.get_run(run_id)
+        return run is not None and run.status == "paused"
+
+    def _is_cancelled(self, run_id: str) -> bool:
+        run = self.database.get_run(run_id)
+        return run is not None and run.status == "cancelled"
 
 
 def _write_frame(frame: pd.DataFrame, path: Path) -> None:

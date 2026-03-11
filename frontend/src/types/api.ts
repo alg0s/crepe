@@ -74,3 +74,38 @@ export type ClusterPayload = {
   summary: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
 };
+
+export type SystemStatusPayload = {
+  graph_auth_configured: boolean;
+  missing_credentials: string[];
+  credential_source: "managed" | "external_env";
+  external_env_path?: string | null;
+  active_env_path: string;
+};
+
+export type SettingsPayload = {
+  credential_source: "managed" | "external_env";
+  external_env_path?: string | null;
+  managed_env_path: string;
+  active_env_path: string;
+  managed_credentials: Record<string, boolean>;
+  effective_credentials: Record<string, boolean>;
+  graph_auth_configured: boolean;
+  missing_credentials: string[];
+};
+
+export type SettingsUpdateRequest = {
+  tenant_id?: string | null;
+  client_id?: string | null;
+  client_secret?: string | null;
+};
+
+export type SettingsTestResult = {
+  ok: boolean;
+  error: string;
+};
+
+export type ActiveJobPayload = {
+  is_running: boolean;
+  active_run: RunRecord | null;
+};

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -16,6 +18,19 @@ def test_api_full_endpoint_surface(sample_run, configured_env, run_db):
     runner.run_suggest(run_id)
 
     client = TestClient(create_app(configured_env))
+    status_resp = client.get("/api/system/status")
+    assert status_resp.status_code == 200
+    status_payload = status_resp.json()
+    assert status_payload["graph_auth_configured"] is True
+    assert status_payload["credential_source"] == "managed"
+
+    settings_resp = client.get("/api/settings")
+    assert settings_resp.status_code == 200
+    settings_payload = settings_resp.json()
+    assert settings_payload["graph_auth_configured"] is True
+    assert settings_payload["effective_credentials"]["MS_CLIENT_SECRET"] is True
+    assert "secret" not in json.dumps(settings_payload)
+
     run_resp = client.get(f"/api/runs/{run_id}")
     assert run_resp.status_code == 200
     assert run_resp.json()["run_id"] == run_id

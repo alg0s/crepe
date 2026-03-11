@@ -173,6 +173,7 @@ def seed_raw_fixture(run_paths: RunPaths) -> None:
 def configured_env(tmp_path, monkeypatch):
     base_dir = tmp_path / "data"
     db_path = base_dir / "crepe.sqlite3"
+    monkeypatch.setenv("CREPE_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("MS_TENANT_ID", "tenant")
     monkeypatch.setenv("MS_CLIENT_ID", "client")
     monkeypatch.setenv("MS_CLIENT_SECRET", "secret")
