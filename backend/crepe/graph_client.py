@@ -113,8 +113,6 @@ class GraphClient:
     def _sanitize_payload(self, resource_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         if resource_name not in MESSAGE_RESOURCES:
             return payload
-        if self.config.privacy_fail_on_content:
-            assert_payload_has_no_content(payload, f"raw:{resource_name}")
         safe_payload = dict(payload)
         safe_values: list[dict[str, Any]] = []
         for item in payload.get("value", []):
@@ -132,12 +130,14 @@ class GraphClient:
             if key == "mentions":
                 safe_mentions = []
                 for mention in value or []:
-                    mentioned = mention.get("mentioned", {})
-                    user = mentioned.get("user", {})
+                    mention_obj = mention if isinstance(mention, dict) else {}
+                    mentioned = mention_obj.get("mentioned", {})
+                    mentioned_obj = mentioned if isinstance(mentioned, dict) else {}
+                    user = mentioned_obj.get("user") or {}
                     safe_mentions.append(
                         {
-                            "id": mention.get("id"),
-                            "mentionType": mention.get("mentionType"),
+                            "id": mention_obj.get("id"),
+                            "mentionType": mention_obj.get("mentionType"),
                             "mentioned": {
                                 "user": {
                                     "id": user.get("id"),

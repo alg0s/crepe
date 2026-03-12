@@ -2,19 +2,6 @@ from __future__ import annotations
 
 from crepe.graph_client import GraphClient
 
-MESSAGE_SELECT_FIELDS = ",".join(
-    [
-        "id",
-        "createdDateTime",
-        "lastModifiedDateTime",
-        "from",
-        "replyToId",
-        "importance",
-        "mentions",
-        "reactions",
-    ]
-)
-
 
 def extract_chat_messages(client: GraphClient, chats: list[dict]) -> list[dict]:
     messages: list[dict] = []
@@ -24,7 +11,6 @@ def extract_chat_messages(client: GraphClient, chats: list[dict]) -> list[dict]:
             client.get_paginated(
                 f"/chats/{chat_id}/messages",
                 "chat_messages",
-                params={"$select": MESSAGE_SELECT_FIELDS},
                 context={"chat_id": chat_id},
             )
         )
@@ -42,7 +28,6 @@ def extract_channel_messages(client: GraphClient, channels: list[dict]) -> list[
             client.get_paginated(
                 f"/teams/{team_id}/channels/{channel_id}/messages",
                 "channel_messages",
-                params={"$select": MESSAGE_SELECT_FIELDS},
                 context={"team_id": team_id, "channel_id": channel_id},
             )
         )

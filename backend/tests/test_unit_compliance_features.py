@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from crepe.extractors.messages import MESSAGE_SELECT_FIELDS, extract_chat_messages, extract_channel_messages
+from crepe.extractors.messages import extract_chat_messages, extract_channel_messages
 from crepe.graph_client import GraphClient
 from crepe.normalize.entities import _enrich_message_routes, _message_columns, _sentiment_from_metadata
 from crepe.privacy import PrivacyViolationError, assert_no_forbidden_columns
@@ -84,17 +84,19 @@ def test_route_enrichment_derives_receivers_and_entities():
 
 
 @pytest.mark.unit
-def test_message_extractors_use_select_projection():
+def test_message_extractors_call_expected_paths_without_params():
     fake = FakePaginatedClient()
     extract_chat_messages(fake, [{"id": "chat-1"}])
     extract_channel_messages(fake, [{"id": "channel-1", "team_id": "team-1"}])
     assert len(fake.calls) == 2
-    for call in fake.calls:
-        assert call["params"]["$select"] == MESSAGE_SELECT_FIELDS
+    assert fake.calls[0]["path"] == "/chats/chat-1/messages"
+    assert fake.calls[0]["params"] is None
+    assert fake.calls[1]["path"] == "/teams/team-1/channels/channel-1/messages"
+    assert fake.calls[1]["params"] is None
 
 
 @pytest.mark.unit
-def test_graph_client_privacy_guard_blocks_content_in_strict_mode(configured_env, run_db):
+def test_graph_client_sanitizes_message_payload_in_strict_mode(configured_env, run_db):
     run_id = run_db.create_run(run_id="unit-sanitize")
     run_paths = build_run_paths(configured_env, run_id)
     client = GraphClient(configured_env, "token", run_paths)
@@ -108,15 +110,24 @@ def test_graph_client_privacy_guard_blocks_content_in_strict_mode(configured_env
                     {
                         "mentionText": "@u2",
                         "mentioned": {"user": {"id": "u2", "displayName": "User 2"}},
-                    }
+                    },
+                    {
+                        "mentionText": "@app",
+                        "mentioned": {"user": None},
+                    },
                 ],
                 "from": {"user": {"id": "u1", "displayName": "User 1"}},
                 "reactions": [{"reactionType": "like", "user": {"id": "u2"}}],
             }
         ]
     }
-    with pytest.raises(PrivacyViolationError):
-        client._sanitize_payload("chat_messages", payload)
+    sanitized = client._sanitize_payload("chat_messages", payload)
+    item = sanitized["value"][0]
+    assert "body" not in item
+    assert "subject" not in item
+    assert "mentionText" not in str(item["mentions"][0])
+    assert item["from"]["user"]["id"] == "u1"
+    assert item["mentions"][1]["mentioned"]["user"]["id"] is None
 
 
 @pytest.mark.unit

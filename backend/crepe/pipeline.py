@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pandas as pd
 
 from crepe.analysis.clustering import cluster_conversations
@@ -51,8 +52,18 @@ class PipelineRunner:
                 users = extract_users(client)
                 teams = extract_teams(client)
                 channels = extract_channels(client, teams)
-                chats = extract_chats(client)
-                extract_chat_messages(client, chats)
+                chats: list[dict[str, Any]] = []
+                try:
+                    chats = extract_chats(client)
+                except httpx.HTTPStatusError as exc:
+                    if _is_app_only_chats_unsupported(exc):
+                        LOGGER.warning(
+                            "Skipping chat extraction for app-only token; /chats is not supported in this tenant context."
+                        )
+                    else:
+                        raise
+                if chats:
+                    extract_chat_messages(client, chats)
                 extract_channel_messages(client, channels)
         except Exception as exc:
             self.database.update_run(run_id, status="failed", stage="extract", error_message=str(exc))
@@ -217,6 +228,21 @@ class PipelineRunner:
 
 def _write_frame(frame: pd.DataFrame, path: Path) -> None:
     frame.to_csv(path, index=False)
+
+
+def _is_app_only_chats_unsupported(exc: httpx.HTTPStatusError) -> bool:
+    response = exc.response
+    request = exc.request
+    if response.status_code != 400:
+        return False
+    if request is None or "/chats" not in str(request.url):
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    message = str((payload.get("error") or {}).get("message") or "").lower()
+    return "application-only context" in message
 
 
 def _load_csv(path: Path) -> pd.DataFrame:
