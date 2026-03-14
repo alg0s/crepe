@@ -8,32 +8,37 @@ from typing import Any
 import pandas as pd
 
 from crepe.privacy import assert_no_forbidden_columns, assert_payload_has_no_content
-from crepe.storage.files import RunPaths
+from crepe.storage.db import RunDatabase
 
 POSITIVE_REACTIONS = {"like", "heart", "laugh", "surprised"}
 NEGATIVE_REACTIONS = {"angry", "sad"}
 
 
-def read_envelopes(resource_dir: Path) -> list[dict[str, Any]]:
-    if not resource_dir.exists():
-        return []
+def read_envelopes(database: RunDatabase, run_id: str, resource_name: str) -> list[dict[str, Any]]:
     envelopes: list[dict[str, Any]] = []
-    for path in sorted(resource_dir.glob("*.json")):
-        envelope = json.loads(path.read_text(encoding="utf-8"))
-        resource_name = str(envelope.get("meta", {}).get("resource_name", ""))
+    for record in database.list_raw_pages(run_id, resource_name):
+        envelope = {
+            "meta": {
+                "resource_name": record.resource_name,
+                "request_path": record.request_path,
+                "page_index": record.page_index,
+                "context": record.context(),
+            },
+            "response": record.response(),
+        }
         if resource_name in {"chat_messages", "channel_messages"}:
-            assert_payload_has_no_content(envelope.get("response", {}), f"normalize:{resource_name}:{path.name}")
+            assert_payload_has_no_content(envelope.get("response", {}), f"normalize:{resource_name}:{record.page_index}")
         envelopes.append(envelope)
     return envelopes
 
 
-def normalize_entities(run_paths: RunPaths) -> dict[str, pd.DataFrame]:
-    users = _normalize_users(read_envelopes(run_paths.raw_dir / "users"))
-    teams = _normalize_teams(read_envelopes(run_paths.raw_dir / "teams"))
-    channels = _normalize_channels(read_envelopes(run_paths.raw_dir / "channels"))
-    chats = _normalize_chats(read_envelopes(run_paths.raw_dir / "chats"))
-    chat_messages = _normalize_messages(read_envelopes(run_paths.raw_dir / "chat_messages"), "chat")
-    channel_messages = _normalize_messages(read_envelopes(run_paths.raw_dir / "channel_messages"), "channel")
+def normalize_entities(database: RunDatabase, run_id: str) -> dict[str, pd.DataFrame]:
+    users = _normalize_users(read_envelopes(database, run_id, "users"))
+    teams = _normalize_teams(read_envelopes(database, run_id, "teams"))
+    channels = _normalize_channels(read_envelopes(database, run_id, "channels"))
+    chats = _normalize_chats(read_envelopes(database, run_id, "chats"))
+    chat_messages = _normalize_messages(read_envelopes(database, run_id, "chat_messages"), "chat")
+    channel_messages = _normalize_messages(read_envelopes(database, run_id, "channel_messages"), "channel")
 
     if not chat_messages.empty or not channel_messages.empty:
         messages = pd.concat([chat_messages, channel_messages], ignore_index=True)
@@ -60,10 +65,7 @@ def normalize_entities(run_paths: RunPaths) -> dict[str, pd.DataFrame]:
     for name, frame in frames.items():
         if name in {"messages", "conversations", "conversation_clusters", "cluster_summary"}:
             assert_no_forbidden_columns(frame, name)
-        csv_path = run_paths.normalized_dir / f"{name}.csv"
-        jsonl_path = run_paths.normalized_dir / f"{name}.jsonl"
-        frame.to_csv(csv_path, index=False)
-        frame.to_json(jsonl_path, orient="records", lines=True)
+        database.replace_dataset(run_id, name, frame)
     return frames
 
 
@@ -157,6 +159,7 @@ def _normalize_messages(envelopes: list[dict[str, Any]], source_type: str) -> pd
                     "mention_ids": "|".join(mention_ids),
                     "receiver_ids": "",
                     "entity_ids": "",
+                    "ner_entities": _join_ner_tokens(item.get("ner_entities")),
                     "reaction_types": "|".join(reaction_types),
                     "sentiment_score": sentiment_score,
                     "sentiment_label": sentiment_label,
@@ -214,6 +217,8 @@ def _enrich_message_routes(messages: pd.DataFrame) -> pd.DataFrame:
     entities: list[str] = []
     for record in working.to_dict(orient="records"):
         tokens = set()
+        for ner_token in filter(None, str(record.get("ner_entities") or "").split("|")):
+            tokens.add(ner_token if ner_token.startswith("NER:") else f"NER:{ner_token}")
         for participant in filter(None, str(record.get("receiver_ids") or "").split("|")):
             tokens.add(f"PERSON:{participant}")
         for participant in filter(None, str(record.get("mention_ids") or "").split("|")):
@@ -307,7 +312,16 @@ def _message_columns() -> list[str]:
         "mention_ids",
         "receiver_ids",
         "entity_ids",
+        "ner_entities",
         "reaction_types",
         "sentiment_score",
         "sentiment_label",
     ]
+
+
+def _join_ner_tokens(value: Any) -> str:
+    if not value:
+        return ""
+    if isinstance(value, list):
+        return "|".join(str(token) for token in value if token)
+    return str(value)
