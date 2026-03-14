@@ -16,10 +16,14 @@ class Config:
     db_path: Path
     cluster_count: int = 6
     chat_gap_minutes: int = 120
-    request_timeout_seconds: float = 30.0
+    request_timeout_seconds: float = 120.0
     max_retries: int = 4
     log_level: str = "INFO"
     privacy_fail_on_content: bool = True
+    ner_enabled: bool = True
+    sentiment_mode: str = "hybrid"
+    nlp_language: str = "en"
+    nlp_strict: bool = True
     credential_source: str = "managed"
     external_env_path: str | None = None
     managed_env_path: Path | None = None
@@ -66,10 +70,14 @@ def load_config(base_dir: str | None = None, db_path: str | None = None) -> Conf
         db_path=database_path,
         cluster_count=int(os.getenv("CREPE_CLUSTER_COUNT", "6")),
         chat_gap_minutes=int(os.getenv("CREPE_CHAT_GAP_MINUTES", "120")),
-        request_timeout_seconds=float(os.getenv("CREPE_REQUEST_TIMEOUT_SECONDS", "30")),
+        request_timeout_seconds=float(os.getenv("CREPE_REQUEST_TIMEOUT_SECONDS", "120")),
         max_retries=int(os.getenv("CREPE_MAX_RETRIES", "4")),
         log_level=os.getenv("CREPE_LOG_LEVEL", "INFO"),
         privacy_fail_on_content=os.getenv("CREPE_PRIVACY_FAIL_ON_CONTENT", "1").lower() not in {"0", "false", "no"},
+        ner_enabled=os.getenv("CREPE_NER_ENABLED", "1").lower() not in {"0", "false", "no"},
+        sentiment_mode=os.getenv("CREPE_SENTIMENT_MODE", "hybrid").lower(),
+        nlp_language=os.getenv("CREPE_NLP_LANGUAGE", "en").lower(),
+        nlp_strict=os.getenv("CREPE_NLP_STRICT", "1").lower() not in {"0", "false", "no"},
         credential_source=state.credential_source,
         external_env_path=state.external_env_path,
         managed_env_path=settings_manager.managed_env_path,

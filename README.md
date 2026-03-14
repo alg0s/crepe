@@ -40,6 +40,7 @@ cd /Users/thanhdang/Documents/shrimpl/crepe
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm
 ```
 
 Set credentials:
@@ -198,5 +199,5 @@ Workflow path: `.github/workflows/ci.yml`
 - The tool is internal-only and stores communication metadata only (no message body persistence).
 - The recommendation engine is heuristic. It proposes merges, splits, and new channels, but it does not mutate Teams.
 - Channel message extraction uses thread roots and replies; chat segmentation is based on inactivity gaps.
-- Sentiment scoring is metadata-driven (importance and reaction signals), not text NLP.
+- Sentiment scoring uses NLP (VADER) when enabled, with metadata fallback.
 - Some Microsoft Graph endpoints remain permission-sensitive even with tenant admin consent. The extractor surfaces those failures explicitly.

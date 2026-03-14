@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import time
-from pathlib import Path
 from typing import Any
 
 import httpx
 
 from crepe.config import Config
+from crepe.nlp import analyze_sentiment, extract_message_text, extract_ner_tokens, NlpSetupError
 from crepe.privacy import assert_payload_has_no_content
-from crepe.storage.files import RunPaths, sanitize_for_filename
+from crepe.storage.db import RunDatabase
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,9 +21,10 @@ MESSAGE_RESOURCES = {"chat_messages", "channel_messages"}
 class GraphClient:
     """Minimal Microsoft Graph client with pagination, retries, and raw payload capture."""
 
-    def __init__(self, config: Config, token: str, run_paths: RunPaths) -> None:
+    def __init__(self, config: Config, token: str, database: RunDatabase, run_id: str) -> None:
         self.config = config
-        self.run_paths = run_paths
+        self.database = database
+        self.run_id = run_id
         self.client = httpx.Client(
             base_url="https://graph.microsoft.com/v1.0",
             headers={"Authorization": f"Bearer {token}"},
@@ -64,7 +65,19 @@ class GraphClient:
 
     def _request_with_retry(self, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
         for attempt in range(self.config.max_retries + 1):
-            response = self.client.get(path, params=params)
+            try:
+                response = self.client.get(path, params=params)
+            except httpx.ReadTimeout:
+                if attempt >= self.config.max_retries:
+                    raise
+                sleep_seconds = 2 ** attempt
+                LOGGER.warning(
+                    "Graph read timed out on %s, retrying in %.1fs",
+                    path,
+                    sleep_seconds,
+                )
+                time.sleep(sleep_seconds)
+                continue
             if response.status_code not in TRANSIENT_STATUS_CODES:
                 response.raise_for_status()
                 return response
@@ -87,28 +100,15 @@ class GraphClient:
         payload: dict[str, Any],
         request_path: str,
         context: dict[str, Any] | None,
-    ) -> Path:
-        resource_dir = self.run_paths.raw_dir / resource_name
-        resource_dir.mkdir(parents=True, exist_ok=True)
-        context_slug = ""
-        if context:
-            context_slug = "__".join(
-                f"{sanitize_for_filename(str(key))}-{sanitize_for_filename(str(value))}"
-                for key, value in sorted(context.items())
-            )
-        prefix = f"{context_slug}__" if context_slug else ""
-        output_path = resource_dir / f"{prefix}page_{page_index:04d}.json"
-        envelope = {
-            "meta": {
-                "resource_name": resource_name,
-                "request_path": request_path,
-                "page_index": page_index,
-                "context": context or {},
-            },
-            "response": payload,
-        }
-        output_path.write_text(json.dumps(envelope, indent=2), encoding="utf-8")
-        return output_path
+    ) -> None:
+        self.database.add_raw_page(
+            self.run_id,
+            resource_name,
+            page_index=page_index,
+            request_path=request_path,
+            context=context,
+            response=payload,
+        )
 
     def _sanitize_payload(self, resource_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         if resource_name not in MESSAGE_RESOURCES:
@@ -123,6 +123,32 @@ class GraphClient:
         return safe_payload
 
     def _sanitize_message_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        ner_tokens: list[str] = []
+        nlp_sentiment_score: float | None = None
+        nlp_sentiment_label: str | None = None
+        wants_nlp_sentiment = self.config.sentiment_mode in {"nlp", "hybrid"}
+        if self.config.ner_enabled or wants_nlp_sentiment:
+            try:
+                message_text = extract_message_text(item)
+                if self.config.ner_enabled:
+                    ner_tokens = extract_ner_tokens(
+                        message_text,
+                        language=self.config.nlp_language,
+                        strict=self.config.nlp_strict,
+                    )
+                if wants_nlp_sentiment:
+                    sentiment = analyze_sentiment(
+                        message_text,
+                        language=self.config.nlp_language,
+                        strict=self.config.nlp_strict,
+                    )
+                    if sentiment is not None:
+                        nlp_sentiment_score = sentiment.score
+                        nlp_sentiment_label = sentiment.label
+            except NlpSetupError:
+                if self.config.nlp_strict:
+                    raise
+                ner_tokens = []
         safe_item: dict[str, Any] = {}
         for key, value in item.items():
             if key in {"body", "subject", "summary", "messageHistory", "attachments", "hostedContents"}:
@@ -166,4 +192,8 @@ class GraphClient:
                 ]
             else:
                 safe_item[key] = value
+        safe_item["ner_entities"] = "|".join(ner_tokens)
+        if nlp_sentiment_score is not None and nlp_sentiment_label is not None:
+            safe_item["nlp_sentiment_score"] = nlp_sentiment_score
+            safe_item["nlp_sentiment_label"] = nlp_sentiment_label
         return safe_item
