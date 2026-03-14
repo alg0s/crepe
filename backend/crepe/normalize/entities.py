@@ -142,6 +142,13 @@ def _normalize_messages(envelopes: list[dict[str, Any]], source_type: str) -> pd
             mention_ids = _mention_ids(item)
             reaction_types = _reaction_types(item)
             sentiment_score, sentiment_label = _sentiment_from_metadata(item.get("importance"), reaction_types)
+            sentiment_source = "metadata"
+            nlp_score = item.get("nlp_sentiment_score")
+            nlp_label = item.get("nlp_sentiment_label")
+            if nlp_score is not None and nlp_label:
+                sentiment_score = float(nlp_score)
+                sentiment_label = str(nlp_label)
+                sentiment_source = "nlp"
             rows.append(
                 {
                     "message_id": item.get("id"),
@@ -163,6 +170,7 @@ def _normalize_messages(envelopes: list[dict[str, Any]], source_type: str) -> pd
                     "reaction_types": "|".join(reaction_types),
                     "sentiment_score": sentiment_score,
                     "sentiment_label": sentiment_label,
+                    "sentiment_source": sentiment_source,
                 }
             )
     return pd.DataFrame(rows, columns=_message_columns())
@@ -316,6 +324,7 @@ def _message_columns() -> list[str]:
         "reaction_types",
         "sentiment_score",
         "sentiment_label",
+        "sentiment_source",
     ]
 
 

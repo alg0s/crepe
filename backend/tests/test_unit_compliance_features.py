@@ -98,7 +98,7 @@ def test_message_extractors_call_expected_paths_without_params():
 
 
 @pytest.mark.unit
-def test_graph_client_sanitizes_message_payload_in_strict_mode(configured_env, run_db):
+def test_graph_client_sanitizes_message_payload_in_strict_mode(configured_env, run_db, monkeypatch):
     run_id = run_db.create_run(run_id="unit-sanitize")
     client = GraphClient(configured_env, "token", run_db, run_id)
     payload = {
@@ -122,6 +122,8 @@ def test_graph_client_sanitizes_message_payload_in_strict_mode(configured_env, r
             }
         ]
     }
+    monkeypatch.setattr("crepe.graph_client.extract_ner_tokens", lambda *args, **kwargs: ["NER:EMAIL:alpha@example.com"])
+    monkeypatch.setattr("crepe.graph_client.analyze_sentiment", lambda *args, **kwargs: type("Sentiment", (), {"score": 0.4, "label": "positive"})())
     sanitized = client._sanitize_payload("chat_messages", payload)
     item = sanitized["value"][0]
     assert "body" not in item
@@ -130,12 +132,14 @@ def test_graph_client_sanitizes_message_payload_in_strict_mode(configured_env, r
     assert item["from"]["user"]["id"] == "u1"
     assert item["mentions"][1]["mentioned"]["user"]["id"] is None
     assert "NER:EMAIL:alpha@example.com" in item["ner_entities"]
+    assert item["nlp_sentiment_label"] == "positive"
 
 
 @pytest.mark.unit
 def test_graph_client_can_sanitize_payload_when_strict_mode_disabled(configured_env, run_db):
     run_id = run_db.create_run(run_id="unit-sanitize-relaxed")
     configured_env.privacy_fail_on_content = False
+    configured_env.nlp_strict = False
     client = GraphClient(configured_env, "token", run_db, run_id)
     payload = {
         "value": [

@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from crepe.config import Config
-from crepe.ner import extract_message_text, extract_ner_tokens
+from crepe.nlp import analyze_sentiment, extract_message_text, extract_ner_tokens, NlpSetupError
 from crepe.privacy import assert_payload_has_no_content
 from crepe.storage.db import RunDatabase
 
@@ -124,11 +124,30 @@ class GraphClient:
 
     def _sanitize_message_item(self, item: dict[str, Any]) -> dict[str, Any]:
         ner_tokens: list[str] = []
-        if self.config.ner_enabled:
+        nlp_sentiment_score: float | None = None
+        nlp_sentiment_label: str | None = None
+        wants_nlp_sentiment = self.config.sentiment_mode in {"nlp", "hybrid"}
+        if self.config.ner_enabled or wants_nlp_sentiment:
             try:
                 message_text = extract_message_text(item)
-                ner_tokens = extract_ner_tokens(message_text)
-            except Exception:
+                if self.config.ner_enabled:
+                    ner_tokens = extract_ner_tokens(
+                        message_text,
+                        language=self.config.nlp_language,
+                        strict=self.config.nlp_strict,
+                    )
+                if wants_nlp_sentiment:
+                    sentiment = analyze_sentiment(
+                        message_text,
+                        language=self.config.nlp_language,
+                        strict=self.config.nlp_strict,
+                    )
+                    if sentiment is not None:
+                        nlp_sentiment_score = sentiment.score
+                        nlp_sentiment_label = sentiment.label
+            except NlpSetupError:
+                if self.config.nlp_strict:
+                    raise
                 ner_tokens = []
         safe_item: dict[str, Any] = {}
         for key, value in item.items():
@@ -174,4 +193,7 @@ class GraphClient:
             else:
                 safe_item[key] = value
         safe_item["ner_entities"] = "|".join(ner_tokens)
+        if nlp_sentiment_score is not None and nlp_sentiment_label is not None:
+            safe_item["nlp_sentiment_score"] = nlp_sentiment_score
+            safe_item["nlp_sentiment_label"] = nlp_sentiment_label
         return safe_item
